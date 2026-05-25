@@ -790,27 +790,8 @@ def _parse_px(path) -> list:
 #           Jahr in Spalte 1
 # ═══════════════════════════════════════════════════════════════════════════
 
-try:
-    _df_statpop_raw = pd.read_excel(PATH_STATPOP, header=None)
-    _pop_data = {}
-    _current_year_statpop = None
-    for _, _row in _df_statpop_raw.iterrows():
-        try:
-            _yr = int(float(_row.iloc[1]))
-            if 2009 < _yr < 2026:
-                _current_year_statpop = _yr
-        except (ValueError, TypeError):
-            pass
-        _sex_str = str(_row.iloc[9]).strip()
-        if _current_year_statpop is not None and _sex_str in ("Mann", "Frau"):
-            _ages = {}
-            for _a in range(101):
-                _val = _row.iloc[11 + _a]
-                _ages[_a] = float(_val) if not pd.isna(_val) else 0.0
-            _pop_data[(_current_year_statpop, _sex_str)] = _ages
-    del _df_statpop_raw  # Speicher freigeben
-except Exception:
-    _pop_data = {}
+# STATPOP nicht auf Server geladen — Parameter bereits als Konstanten hinterlegt
+_pop_data = {}
 
 
 def get_pop_band(jahr: int, sex: str, alter_von: int, alter_bis: int) -> float:
