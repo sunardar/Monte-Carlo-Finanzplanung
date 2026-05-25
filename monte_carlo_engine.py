@@ -97,10 +97,10 @@ D_SPITEX_MEAN = 1.81
 
 # Kostensteigerung — werden in Cell 3 aus KTZH-Daten gesetzt
 # NEU: separate Parameter für Heim und Spitex
-HEIM_KOSTEN_MU     = None   # wird in Cell 3 gesetzt
-HEIM_KOSTEN_SIGMA  = None   # wird in Cell 3 gesetzt
-SPITEX_KOSTEN_MU   = None   # wird in Cell 3 gesetzt 
-SPITEX_KOSTEN_SIGMA = None  # wird in Cell 3 gesetzt 
+HEIM_KOSTEN_MU     = 0.0256
+HEIM_KOSTEN_SIGMA  = 0.0159
+SPITEX_KOSTEN_MU   = 0.0168
+SPITEX_KOSTEN_SIGMA = 0.0250 
 
 # ── Haushaltslogik ────────────────────────────────────────────────────────────
 AUSGABEN_REDUKTION_TOD_PARTNER = 0.30
@@ -159,15 +159,6 @@ P_DIVORCE_BY_DURATION = {
     "20+ Jahre":   0.001479,
 }
 
-print("✓ Cell 0: Imports & Konstanten geladen")
-print(f"  DATA_DIR:              {DATA_DIR}")
-print(f"  N_SIM:                 {N_SIM:,}")
-print(f"  SIM_BIS_ALTER:         {SIM_BIS_ALTER}")
-print(f"  AHV_MAX_RENTE:         CHF {AHV_MAX_RENTE:,.0f}")
-print(f"  EL_EINTRITTSSCHWELLE:  CHF {EL_EINTRITTSSCHWELLE_LEDIG:,} / "
-      f"CHF {EL_EINTRITTSSCHWELLE_VERHEIRATET:,}")
-print(f"  HEIM/SPITEX_KOSTEN:    werden in Cell 3 gesetzt")
-print(f"  LIEGEN_MU/SIGMA:       wird in Cell 2 gesetzt")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 1 — STEUERFUNKTIONEN
@@ -218,8 +209,6 @@ def get_steuerfuss(gemeinde: str, konfession: str = "ohne") -> float:
         # Fallback auf ohne Kirche wenn Kirchensteuerfuss fehlt
         val = row[_COL_OHNE]
     return float(val)
-
-
 
 
 def get_gemeinden():
@@ -457,23 +446,8 @@ def berechne_liegenschaft_steuereffekt(liegenschaft: float,
 
 # ── Verifikation ──────────────────────────────────────────────────────────────
 _sf = get_steuerfuss("Urdorf", "ohne")
-print(f"\nSteuerfuss Urdorf (ohne Kirche): {_sf:.0f}%")
-print(f"\nEinkommenssteuer:")
-print(f"  CHF 100k ledig:           CHF {berechne_einkommenssteuer(100_000, _sf):>10,.2f}")
-print(f"  CHF 100k verheiratet:     CHF {berechne_einkommenssteuer(100_000, _sf, True):>10,.2f}")
-print(f"  CHF 210k verheiratet:     CHF {berechne_einkommenssteuer(210_000, _sf, True, 80_000):>10,.2f}")
-print(f"\nVermögenssteuer (einfache Staatssteuer, Steuerfuss 100%):")
-print(f"  CHF   500k ledig:  {_verm_kt_grundtarif(500_000):>8.2f}  (Ziel: 298.00)")
-print(f"  CHF 2'000k ledig:  {_verm_kt_grundtarif(2_000_000):>8.2f}  (Ziel: 2'750.00)")
-print(f"  CHF 2'000k verh.:  {_verm_kt_verheiratetentarif(2_000_000):>8.2f}  (Ziel: 2'590.00)")
-print(f"\nKapitalleistungssteuer:")
-print(f"  CHF 300k:                 CHF {berechne_kapitalleistungssteuer(300_000, _sf):>10,.2f}")
-print(f"\nLiegenschaft Steuereffekt:")
 emw_alt, abz_alt = berechne_liegenschaft_steuereffekt(900_000, 600_000, 0.025, 2027, eigenmietwert=22_050)
 emw_neu, abz_neu = berechne_liegenschaft_steuereffekt(900_000, 600_000, 0.025, 2029, eigenmietwert=0)
-print(f"  2027 (altes Regime): EMW={emw_alt:,.0f}  Abzug={abz_alt:,.0f}")
-print(f"  2029 (neues Regime): EMW={emw_neu:,.0f}  Abzug={abz_neu:,.0f}")
-print("\n✓ Cell 1: Steuerfunktionen geladen und verifiziert")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 2 — RENDITE- & INFLATIONSMODELL
@@ -590,9 +564,6 @@ PORTFOLIOS = {
         "immobilien": 0.10, "gold": 0.00, "cash": 0.00},
 }
 
-print(f"\nPortfolio-Erwartungsrenditen:")
-print(f"  {'Portfolio':<15} {'μ (p.a.)':>10} {'σ (p.a.)':>10}")
-print("  " + "-" * 38)
 for _rv, _p in PORTFOLIOS.items():
     _mu_p  = sum(ASSET_PARAMS[a]["mu"]    * w
                  for a, w in _p.items() if a != "name")
@@ -622,9 +593,6 @@ INFLATION_SIGMA = float(
     np.std(_infl_rates, ddof=1)
 )
 
-print("\nInflation Schweiz (BFS 2001–2025):")
-print(f"  μ = {INFLATION_MU * 100:.3f}%")
-print(f"  σ = {INFLATION_SIGMA * 100:.3f}%")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -681,13 +649,11 @@ def simuliere_liegenschaft_renditen(n_jahre: int,
 
 # ── Verifikation ──────────────────────────────────────────────────────────────
 _rng_test = np.random.default_rng(42)
-print(f"\nSimulations-Verifikation (N=10'000):")
 for _rv in [1, 2, 3]:
     _r = simuliere_rendite(_rv, 10_000, _rng_test)
     print(f"  {PORTFOLIOS[_rv]['name']:<13}: "
           f"Ø={_r.mean()*100:.2f}%  σ={_r.std()*100:.2f}%")
 
-print("\n✓ Cell 2: Rendite- & Inflationsmodell geladen")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 3 — STERBETAFELN & PFLEGEFALL-PARAMETER
@@ -748,9 +714,6 @@ def get_qx(geburtsjahr: int, female: int, alter: int) -> float:
         return float(_subset_jg.loc[_idx, "qx"])
     return float(_df_q[_df_q["Geschlecht"] == geschlecht]["qx"].max())
 
-print("✓ Sterbetafeln geladen")
-print(f"  Beispiel Mann 1978, Alter 65: qx={get_qx(1978, 0, 65):.4%}")
-print(f"  Beispiel Frau 1983, Alter 65: qx={get_qx(1983, 1, 65):.4%}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -790,8 +753,7 @@ def _parse_px(path) -> list:
 #           Jahr in Spalte 1
 # ═══════════════════════════════════════════════════════════════════════════
 
-# STATPOP nicht auf Server geladen — Parameter bereits als Konstanten hinterlegt
-_pop_data = {}
+_pop_data = {}  # STATPOP nicht geladen - Parameter bereits als Konstanten hinterlegt
 
 
 def get_pop_band(jahr: int, sex: str, alter_von: int, alter_bis: int) -> float:
@@ -828,11 +790,24 @@ _age_von_bis = {
 
 _LH_FALLBACK = {
     "mann": {
+        "50-54": 0.0008, "55-59": 0.0015, "60-64": 0.0025,
+        "65-69": 0.0045, "70-74": 0.0100, "75-79": 0.0230,
+        "80-84": 0.0550, "85-89": 0.1100, "90-94": 0.1800, "95+": 0.2500,
+    },
+    "frau": {
+        "50-54": 0.0006, "55-59": 0.0012, "60-64": 0.0020,
+        "65-69": 0.0040, "70-74": 0.0090, "75-79": 0.0220,
+        "80-84": 0.0600, "85-89": 0.1300, "90-94": 0.2100, "95+": 0.3000,
+    },
+}
+
+_lh = {
+    "mann": {
         "50-54": 0.00026867153503569576, "55-59": 0.0005109209722782845,
-        "60-64": 0.0010721930381530518, "65-69": 0.0025910464742828917,
-        "70-74": 0.005540375653753171,  "75-79": 0.012498031351225304,
-        "80-84": 0.03162714723201336,   "85-89": 0.08158077743267499,
-        "90-94": 0.1838217621667425,    "95+":   0.3667614103576291,
+        "60-64": 0.0010721930381530518,  "65-69": 0.0025910464742828917,
+        "70-74": 0.005540375653753171,   "75-79": 0.012498031351225304,
+        "80-84": 0.03162714723201336,    "85-89": 0.08158077743267499,
+        "90-94": 0.1838217621667425,     "95+":   0.3667614103576291,
     },
     "frau": {
         "50-54": 0.00028029080528602736, "55-59": 0.0005508754572176523,
@@ -842,156 +817,48 @@ _LH_FALLBACK = {
         "90-94": 0.26146148480574993,    "95+":   0.44399983476347227,
     },
 }
+_heim_params = {
+    "50-54": {"D": 3.3564391273750878,  "p_tod": 0.37332864180154823},
+    "55-59": {"D": 3.190664721817045,   "p_tod": 0.4482183788289227},
+    "60-64": {"D": 3.1345190380761525,  "p_tod": 0.48697394789579157},
+    "65-69": {"D": 3.0884085082796364,  "p_tod": 0.5350239035543546},
+    "70-74": {"D": 2.925951962507323,   "p_tod": 0.5943760984182777},
+    "75-79": {"D": 2.761535261077595,   "p_tod": 0.6508009153318077},
+    "80-84": {"D": 2.6863973451627103,  "p_tod": 0.6966013116160419},
+    "85-89": {"D": 2.5411157667730473,  "p_tod": 0.7629665009443998},
+    "90-94": {"D": 2.191733894886701,   "p_tod": 0.8367392335982917},
+    "95+":   {"D": 1.6217622771265083,  "p_tod": 0.9026326620023101},
+}
 
-try:
-    _somed = np.array(_parse_px(PATH_SOMED)).reshape([34, 7, 8, 9, 4, 21, 2, 19])
+def get_heim_params(age: int) -> dict:
+    if   age < 55: return _heim_params["50-54"]
+    elif age < 60: return _heim_params["55-59"]
+    elif age < 65: return _heim_params["60-64"]
+    elif age < 70: return _heim_params["65-69"]
+    elif age < 75: return _heim_params["70-74"]
+    elif age < 80: return _heim_params["75-79"]
+    elif age < 85: return _heim_params["80-84"]
+    elif age < 90: return _heim_params["85-89"]
+    elif age < 95: return _heim_params["90-94"]
+    else:          return _heim_params["95+"]
 
-    _lh = {"mann": {}, "frau": {}}
-    for _si, _sk in [(1, "mann"), (2, "frau")]:
-        for _age in _age_lbl:
-            _ai        = _age_ai[_age]
-            _av, _ab   = _age_von_bis[_age]
-            _rates     = []
-            for _yr in _ref_j:
-                _ji = _somed_j.index(_yr)
-                _ev = _somed[0, 1, 1, 0, _si, _ai, 0, _ji]
-                _pn = get_pop_band(_yr, _sk, _av, _ab)
-                if _ev > 0 and not np.isnan(_pn) and _pn > 0:
-                    _rates.append(_ev / _pn)
-            _lh[_sk][_age] = (float(np.mean(_rates))
-                               if _rates
-                               else _LH_FALLBACK[_sk][_age])
-
-    _heim_params = {}
-    for _age in _age_lbl:
-        _ai = _age_ai[_age]
-        _abg, _bst, _tod = [], [], []
-        for _yr in _ref_j:
-            _ji = _somed_j.index(_yr)
-            _a  = sum(_somed[0, 1, 0, _di, 0, _ai, 0, _ji]
-                      for _di in [1, 2, 3, 4, 5, 8]
-                      if _somed[0, 1, 0, _di, 0, _ai, 0, _ji] > 0)
-            _b  = _somed[0, 1, 0, 0, 0, _ai, 1, _ji]
-            _t  = _somed[0, 1, 0, 5, 0, _ai, 0, _ji]
-            if _a > 0 and _b > 0:
-                _abg.append(_a); _bst.append(_b); _tod.append(_t)
-        _heim_params[_age] = {
-            "D":     float(np.mean(_bst)) / float(np.mean(_abg)) if _abg else 2.0,
-            "p_tod": float(np.mean(_tod)) / float(np.mean(_abg)) if _abg else 0.7,
-        }
-
-    def get_heim_params(age: int) -> dict:
-        """D: mittlere Aufenthaltsdauer, p_tod: P(Tod im Heim). Quelle: BFS SOMED."""
-        if   age < 55: return _heim_params["50-54"]
-        elif age < 60: return _heim_params["55-59"]
-        elif age < 65: return _heim_params["60-64"]
-        elif age < 70: return _heim_params["65-69"]
-        elif age < 75: return _heim_params["70-74"]
-        elif age < 80: return _heim_params["75-79"]
-        elif age < 85: return _heim_params["80-84"]
-        elif age < 90: return _heim_params["85-89"]
-        elif age < 95: return _heim_params["90-94"]
-        else:          return _heim_params["95+"]
-
-    def get_lambda_heim(age: int, female: int) -> float:
-        """Heim-Eintrittswahrscheinlichkeit. Quelle: BFS SOMED + STATPOP."""
-        if age < 50: return 0.0
-        _sk = "frau" if female == 1 else "mann"
-        for _band, _lo, _hi in [
-            ("50-54", 50, 55), ("55-59", 55, 60), ("60-64", 60, 65),
-            ("65-69", 65, 70), ("70-74", 70, 75), ("75-79", 75, 80),
-            ("80-84", 80, 85), ("85-89", 85, 90), ("90-94", 90, 95),
-            ("95+",   95, 200)]:
-            if _lo <= age < _hi:
-                return _lh[_sk][_band]
-        return 0.0
-
-    print("✓ SOMED geladen — Heim-Parameter berechnet")
-    print(f"  Alter 80-84: D={_heim_params['80-84']['D']:.2f}J  "
-          f"p_tod={_heim_params['80-84']['p_tod']:.3f}")
-    print(f"  λ_heim Mann 80: {get_lambda_heim(82, 0):.4f}  "
-          f"λ_heim Frau 80: {get_lambda_heim(82, 1):.4f}")
-
-except Exception as e:
-    print(f"  ⚠️  SOMED: {e} — verwende BFS-Fallback")
-
-    _heim_params = {
-        "50-54": {"D": 3.3564391273750878,  "p_tod": 0.37332864180154823},
-        "55-59": {"D": 3.190664721817045,   "p_tod": 0.4482183788289227},
-        "60-64": {"D": 3.1345190380761525,  "p_tod": 0.48697394789579157},
-        "65-69": {"D": 3.0884085082796364,  "p_tod": 0.5350239035543546},
-        "70-74": {"D": 2.925951962507323,   "p_tod": 0.5943760984182777},
-        "75-79": {"D": 2.761535261077595,   "p_tod": 0.6508009153318077},
-        "80-84": {"D": 2.6863973451627103,  "p_tod": 0.6966013116160419},
-        "85-89": {"D": 2.5411157667730473,  "p_tod": 0.7629665009443998},
-        "90-94": {"D": 2.191733894886701,   "p_tod": 0.8367392335982917},
-        "95+":   {"D": 1.6217622771265083,  "p_tod": 0.9026326620023101},
-    }
-    def get_heim_params(age: int) -> dict:
-        if   age < 55: return _heim_params["50-54"]
-        elif age < 60: return _heim_params["55-59"]
-        elif age < 65: return _heim_params["60-64"]
-        elif age < 70: return _heim_params["65-69"]
-        elif age < 75: return _heim_params["70-74"]
-        elif age < 80: return _heim_params["75-79"]
-        elif age < 85: return _heim_params["80-84"]
-        elif age < 90: return _heim_params["85-89"]
-        elif age < 95: return _heim_params["90-94"]
-        else:          return _heim_params["95+"]
-
-    def get_lambda_heim(age: int, female: int) -> float:
-        if age < 50: return 0.0
-        _sk = "frau" if female == 1 else "mann"
-        for _band, _lo, _hi in [
-            ("50-54", 50, 55), ("55-59", 55, 60), ("60-64", 60, 65),
-            ("65-69", 65, 70), ("70-74", 70, 75), ("75-79", 75, 80),
-            ("80-84", 80, 85), ("85-89", 85, 90), ("90-94", 90, 95),
-            ("95+",   95, 200)]:
-            if _lo <= age < _hi:
-                return _lh[_sk][_band]
-        return 0.0
-
+def get_lambda_heim(age: int, female: int) -> float:
+    if age < 50: return 0.0
+    _sk = "frau" if female == 1 else "mann"
+    for _band, _lo, _hi in [
+        ("50-54", 50, 55), ("55-59", 55, 60), ("60-64", 60, 65),
+        ("65-69", 65, 70), ("70-74", 70, 75), ("75-79", 75, 80),
+        ("80-84", 80, 85), ("85-89", 85, 90), ("90-94", 90, 95),
+        ("95+",   95, 200)]:
+        if _lo <= age < _hi:
+            return _lh[_sk][_band]
+    return 0.0
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 5. SPITEX-EPISODENLÄNGEN (SHP)
 # ═══════════════════════════════════════════════════════════════════════════
 
-try:
-    _dfh_ep, _ = pyreadstat.read_dta(PATH_SHP_H, usecols=["idhous", "year", "hf17"])
-    _dfp_ep, _ = pyreadstat.read_dta(PATH_SHP_P, usecols=["idpers", "idhous", "year", "age"])
-    _dfh_ep["spitex"] = (_dfh_ep["hf17"] == 1).astype(int)
-    _dfa = (_dfp_ep.groupby(["idhous", "year"])["age"]
-            .max().reset_index().rename(columns={"age": "max_age"}))
-    _df50 = (_dfh_ep.merge(_dfa, on=["idhous", "year"], how="left")
-             .pipe(lambda d: d[d["max_age"] >= 50])
-             .sort_values(["idhous", "year"]).copy())
-    _df50["sp_prev"]  = _df50.groupby("idhous")["spitex"].shift(1)
-    _df50["ep_start"] = ((_df50["spitex"] == 1) &
-                         (_df50["sp_prev"].fillna(0) == 0)).astype(int)
-    _df50["ep_id"]    = _df50.groupby("idhous")["ep_start"].cumsum()
-    _MIN_YR = int(_df50["year"].min())
-    _MAX_YR = int(_df50["year"].max())
-    _eps = []
-    for (_hh, _ep), _grp in _df50[_df50["spitex"] == 1].groupby(["idhous", "ep_id"]):
-        _yrs = sorted(_grp["year"].tolist())
-        if not all(_yrs[i + 1] - _yrs[i] == 1 for i in range(len(_yrs) - 1)):
-            continue
-        _nxt = _df50[(_df50["idhous"] == _hh) & (_df50["year"] == max(_yrs) + 1)]
-        _rc  = ((len(_nxt) > 0 and _nxt["spitex"].values[0] == 1) or
-                (len(_nxt) == 0 and max(_yrs) == _MAX_YR))
-        _eps.append({"n_years": len(_yrs), "lc": min(_yrs) == _MIN_YR, "rc": _rc})
-    _edf      = pd.DataFrame(_eps)
-    _complete = _edf[~_edf["lc"] & ~_edf["rc"]].copy()
-    _log_d        = np.log(_complete["n_years"].values + 0.5)
-    D_SPITEX_MU   = float(_log_d.mean())
-    D_SPITEX_SIG  = float(_log_d.std(ddof=1))
-    D_SPITEX_MEAN = float(np.exp(D_SPITEX_MU + 0.5 * D_SPITEX_SIG**2))
-    print(f"✓ SHP Spitex-Episoden geladen: N={len(_complete)}")
-    print(f"  D_SPITEX_MU={D_SPITEX_MU:.4f}  "
-          f"D_SPITEX_SIG={D_SPITEX_SIG:.4f}  "
-          f"E[D]={D_SPITEX_MEAN:.2f}J")
-except Exception as e:
-    print(f"  ⚠️  SHP Spitex-Episoden: {e} — Platzhalter aktiv")
+# SHP nicht geladen - D_SPITEX bereits als Konstante gesetzt
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1002,46 +869,17 @@ except Exception as e:
 _spitex_grenzen = {"50-64": (50, 65), "65-79": (65, 80), "80+": (80, 101)}
 _sp_jahre       = list(range(2011, 2025))
 
-try:
-    _sp_arr = np.array(_parse_px(PATH_SPITEX)).reshape([4, 27, 6, 3, 8, 4, 14])
-    _ls     = {}
-    for _ai, _band in [(3, "50-64"), (4, "65-79"), (5, "80+")]:
-        _ls[_band] = {}
-        _av, _ab   = _spitex_grenzen[_band]
-        for _gi, _sk in [(1, "mann"), (2, "frau")]:
-            _faelle = [_sp_arr[0, 0, _ai, _gi, 1, 1, _ji]
-                       for _ji in range(14)
-                       if _sp_arr[0, 0, _ai, _gi, 1, 1, _ji] > 0]
-            _pop_werte = [get_pop_band(_yr, _sk, _av, _ab) for _yr in _sp_jahre]
-            _pop_werte = [v for v in _pop_werte if not np.isnan(v) and v > 0]
-            if _faelle and _pop_werte:
-                _ls[_band][_sk] = (float(np.mean(_faelle)) /
-                                   float(np.mean(_pop_werte))) / D_SPITEX_MEAN
-            else:
-                _ls[_band][_sk] = 0.0
-                print(f"  ⚠️  Spitex-Rate {_sk} {_band}: Fallback 0.0")
+_ls = {
+    "50-64": {"mann": 0.026742246325587714, "frau": 0.028248145435525226},
+    "65-79": {"mann": 0.04322206993217663,  "frau": 0.044283417277603355},
+    "80+":   {"mann": 0.14732311418579383,  "frau": 0.16708116911975843},
+}
 
-    def get_lambda_spitex(age: int, female: int) -> float:
-        """Spitex-Eintrittswahrscheinlichkeit. Quelle: BFS Spitex + STATPOP."""
-        if age < 50: return 0.0
-        _band = "50-64" if age < 65 else ("65-79" if age < 80 else "80+")
-        _sk   = "frau" if female == 1 else "mann"
-        return _ls[_band][_sk]
-
-    print("✓ BFS Spitex-Eintrittsraten geladen")
-except Exception as e:
-    print(f"  ⚠️  BFS Spitex: {e}")
-    _ls = {
-        "50-64": {"mann": 0.026742246325587714, "frau": 0.028248145435525226},
-        "65-79": {"mann": 0.04322206993217663,  "frau": 0.044283417277603355},
-        "80+":   {"mann": 0.14732311418579383,  "frau": 0.16708116911975843},
-    }
-    def get_lambda_spitex(age: int, female: int) -> float:
-        if age < 50: return 0.0
-        _band = "50-64" if age < 65 else ("65-79" if age < 80 else "80+")
-        _sk   = "frau" if female == 1 else "mann"
-        return _ls[_band][_sk]
-
+def get_lambda_spitex(age: int, female: int) -> float:
+    if age < 50: return 0.0
+    _band = "50-64" if age < 65 else ("65-79" if age < 80 else "80+")
+    _sk   = "frau" if female == 1 else "mann"
+    return _ls[_band][_sk]
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 7. HEIMKOSTEN NACH GEMEINDE (KTZH SOMED 2024)
@@ -1065,11 +903,8 @@ def _lade_heimkosten_gemeinde(path) -> dict:
 
 try:
     _HEIMKOSTEN_GEMEINDE = _lade_heimkosten_gemeinde(PATH_KTZH_HEIM)
-    print(f"✓ Heimkosten nach Gemeinde: {len(_HEIMKOSTEN_GEMEINDE) - 1} Gemeinden")
-    print(f"  Kanton ZH Ø: CHF {_HEIMKOSTEN_GEMEINDE['__kanton__']:,.0f}/Jahr")
-except Exception as e:
+except Exception:
     _HEIMKOSTEN_GEMEINDE = {"__kanton__": 92_484.0}
-    print(f"  ⚠️  Heimkosten: {e}")
 
 def get_kosten_heim_jahr(gemeinde: str) -> float:
     """Basisjahr-Heimkosten (2024, nominal) nach Gemeinde. Fallback: Kanton ZH."""
@@ -1241,9 +1076,6 @@ def get_heim_netto_kosten(rente_ahv, rente_pk, wealth, gemeinde="Urdorf",
     return max(0.0, brutto - el)
 
 
-print("\n✓ Cell 3: Sterbetafeln & Pflegefall-Parameter geladen")
-print(f"  HEIM_KOSTEN_MU:     {HEIM_KOSTEN_MU:.2%}  σ={HEIM_KOSTEN_SIGMA:.2%}")
-print(f"  SPITEX_KOSTEN_MU:   {SPITEX_KOSTEN_MU:.2%}  σ={SPITEX_KOSTEN_SIGMA:.2%}")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 4 — PARAMETER-SCHEMA (ZWEI-PERSONEN-HAUSHALT)
@@ -1344,7 +1176,7 @@ class HaushaltParams:
     # ── Simulation ────────────────────────────────────────────────────────
     risikoaversion:  int    = 2            # 1=Konservativ, 2=Ausgewogen, 3=Wachstum
     risikoaversion_saeule3: int = 1        # Säule 3a meist konservativer
-    zivilstand_logit_a: str = "single"     # initialer civil_status für Arbeitslosigkeits-Logit
+    zivilstand_logit_a: str = "single"
 
 
     # ── Berechnete Felder ─────────────────────────────────────────────────
@@ -1394,6 +1226,7 @@ def berechne_ahv_rente(ahv_rente_erwartet: float,
         rente = rente * (1 + AHV_AUFSCHUB_ZUSCHLAG[aj])
 
     return min(rente, AHV_MAX_RENTE)   # nie über Maximum
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2107,9 +1940,6 @@ def jahresschritt(s: dict,
     return s
 
 
-print("✓ Cell 6: jahresschritt() definiert")
-print(f"  Fix 3: Pflege-Tod → nur Flag, kein frühes return ✓")
-print(f"  Fix 4: BVG-Cashflow-Abzug = AN-Anteil (50%), BVG Art. 66 ✓")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 7 — RISIKOMODULE
@@ -2392,7 +2222,6 @@ def _pflegefall_step_crn(alter:                int,
 
 
 
-print("\n✓ Cell 7: Risikomodule geladen")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 8 — SIMULATIONS-LOOP
@@ -2623,46 +2452,3 @@ def simuliere_alle_szenarien_parallel(haushalt: HaushaltParams,
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# ALLE SZENARIEN SIMULIEREN
-# ═══════════════════════════════════════════════════════════════════════════
-
-print(f"Starte Simulation: N={N_SIM:,} je Szenario")
-print(f"Haushalt: {haushalt.person_a.name} (Jg. {haushalt.person_a.geburtsjahr}) "
-      f"+ {haushalt.person_b.name} (Jg. {haushalt.person_b.geburtsjahr})")
-print(f"Alter A/B: {haushalt.alter_a()}/{haushalt.alter_b()}")
-print("=" * 60)
-
-_t_total  = time.time()
-RESULTATE = simuliere_alle_szenarien_parallel(haushalt, n_sim=N_SIM)
-
-print(f"\n{'Szenario':<35} {'P(Tod<85)':>10} {'P(Ruin|lebt)':>13} "
-      f"{'P(Lücke 85)':>12} {'Netto-Pos. 85':>20} {'Ruin-Alter':>11}")
-print("─" * 106)
-
-for _name, _res in RESULTATE.items():
-    _kz = _res["kennzahlen"]
-    _netto = _kz["median_netto_85"]
-    if np.isnan(_netto):
-        _netto_str = f"{'–':>20}"
-    elif _netto >= 0:
-        _netto_str = f"Verm.  CHF {_netto/1e6:>6.2f}M"
-    else:
-        _netto_str = f"Lücke  CHF {abs(_netto)/1e6:>6.2f}M"
-    _luecke_str = (f"{_kz['p_vorsorgeluecke_85']*100:>11.1f}%"
-                   if not np.isnan(_kz["p_vorsorgeluecke_85"])
-                   else f"{'–':>12}")
-    _ruin_str = (f"{_kz['median_ruin_alter']:>10.1f}"
-                 if not np.isnan(_kz["median_ruin_alter"])
-                 else f"{'kein Ruin':>10}")
-    print(f"{_name:<35} "
-          f"{_kz['p_tod_bis_85']*100:>9.1f}% "
-          f"{_kz['p_ruin_bedingt_85']*100:>12.2f}% "
-          f"{_luecke_str} "
-          f"{_netto_str} "
-          f"{_ruin_str}")
-
-print(f"\n{'='*60}")
-print(f"Total Laufzeit: {time.time()-_t_total:.1f}s")
-print(f"✓ Cell 8: Alle {len(SZENARIEN)} Szenarien simuliert")
-print(f"  Fix 1: s['szenario'] = name gesetzt ✓")
-print(f"  Fix 2: Todesjahr-Vermögen vor break gespeichert ✓")
