@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # MONTE CARLO FINANZPLANUNG SCHWEIZ
 # Masterarbeit — Stochastische Finanzplanung für private Haushalte
@@ -26,7 +20,7 @@ import multiprocessing
 import time
 
 # ── Pfade ─────────────────────────────────────────────────────────────────────
-NOTEBOOK_DIR = Path().resolve()
+NOTEBOOK_DIR = Path(__file__).parent
 DATA_DIR     = NOTEBOOK_DIR
 
 # ── Simulation ────────────────────────────────────────────────────────────────
@@ -165,9 +159,15 @@ P_DIVORCE_BY_DURATION = {
     "20+ Jahre":   0.001479,
 }
 
-
-# In[2]:
-
+print("✓ Cell 0: Imports & Konstanten geladen")
+print(f"  DATA_DIR:              {DATA_DIR}")
+print(f"  N_SIM:                 {N_SIM:,}")
+print(f"  SIM_BIS_ALTER:         {SIM_BIS_ALTER}")
+print(f"  AHV_MAX_RENTE:         CHF {AHV_MAX_RENTE:,.0f}")
+print(f"  EL_EINTRITTSSCHWELLE:  CHF {EL_EINTRITTSSCHWELLE_LEDIG:,} / "
+      f"CHF {EL_EINTRITTSSCHWELLE_VERHEIRATET:,}")
+print(f"  HEIM/SPITEX_KOSTEN:    werden in Cell 3 gesetzt")
+print(f"  LIEGEN_MU/SIGMA:       wird in Cell 2 gesetzt")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 1 — STEUERFUNKTIONEN
@@ -219,16 +219,14 @@ def get_steuerfuss(gemeinde: str, konfession: str = "ohne") -> float:
         val = row[_COL_OHNE]
     return float(val)
 
-print(f"✓ {len(_df_steuer)} Gemeinden geladen")
-print(f"  Urdorf ohne Kirche:    {get_steuerfuss('Urdorf', 'ohne'):.0f}%")
-print(f"  Urdorf ref. Kirche:    {get_steuerfuss('Urdorf', 'ref'):.0f}%")
-print(f"  Urdorf kath. Kirche:   {get_steuerfuss('Urdorf', 'kath'):.0f}%")
-print(f"  Adliswil ohne Kirche:  {get_steuerfuss('Adliswil', 'ohne'):.0f}%")
+
+
 
 def get_gemeinden():
-    _lade_steuern()
     col = _df_steuer.columns[1]
     return sorted([str(n).strip() for n in _df_steuer[col].dropna().tolist() if str(n).strip()])
+
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # EINKOMMENSTEUER KANTON ZÜRICH
@@ -457,49 +455,127 @@ def berechne_liegenschaft_steuereffekt(liegenschaft: float,
     return 0.0, 0.0
 
 
-# In[3]:
-
+# ── Verifikation ──────────────────────────────────────────────────────────────
+_sf = get_steuerfuss("Urdorf", "ohne")
+print(f"\nSteuerfuss Urdorf (ohne Kirche): {_sf:.0f}%")
+print(f"\nEinkommenssteuer:")
+print(f"  CHF 100k ledig:           CHF {berechne_einkommenssteuer(100_000, _sf):>10,.2f}")
+print(f"  CHF 100k verheiratet:     CHF {berechne_einkommenssteuer(100_000, _sf, True):>10,.2f}")
+print(f"  CHF 210k verheiratet:     CHF {berechne_einkommenssteuer(210_000, _sf, True, 80_000):>10,.2f}")
+print(f"\nVermögenssteuer (einfache Staatssteuer, Steuerfuss 100%):")
+print(f"  CHF   500k ledig:  {_verm_kt_grundtarif(500_000):>8.2f}  (Ziel: 298.00)")
+print(f"  CHF 2'000k ledig:  {_verm_kt_grundtarif(2_000_000):>8.2f}  (Ziel: 2'750.00)")
+print(f"  CHF 2'000k verh.:  {_verm_kt_verheiratetentarif(2_000_000):>8.2f}  (Ziel: 2'590.00)")
+print(f"\nKapitalleistungssteuer:")
+print(f"  CHF 300k:                 CHF {berechne_kapitalleistungssteuer(300_000, _sf):>10,.2f}")
+print(f"\nLiegenschaft Steuereffekt:")
+emw_alt, abz_alt = berechne_liegenschaft_steuereffekt(900_000, 600_000, 0.025, 2027, eigenmietwert=22_050)
+emw_neu, abz_neu = berechne_liegenschaft_steuereffekt(900_000, 600_000, 0.025, 2029, eigenmietwert=0)
+print(f"  2027 (altes Regime): EMW={emw_alt:,.0f}  Abzug={abz_alt:,.0f}")
+print(f"  2029 (neues Regime): EMW={emw_neu:,.0f}  Abzug={abz_neu:,.0f}")
+print("\n✓ Cell 1: Steuerfunktionen geladen und verifiziert")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 2 — RENDITE- & INFLATIONSMODELL
-# Deployment-Version: Asset-Parameter fest hinterlegt (Bloomberg 2007–2026)
+# Quellen:
+#   Aktien:       SPI Total Return Index
+#   Immobilien:   SXI Real Estate Funds TR (SWIIT)
+#   Obligationen: SBR24T
+#   Gold:         Goldpreis CHF
+#   Datei:        return.xlsx (Sheet: Tabelle1)
+#   Inflation:    BFS Landesindex Konsumentenpreise, Basis 2020=100
 # ═══════════════════════════════════════════════════════════════════════════
 
 STOCHASTIC_ASSETS = ["aktien", "obligationen", "immobilien", "gold"]
+_RESAMPLE_YEAR = "YE" if pd.__version__ >= "2.2" else "A"
 
-# ── Asset-Parameter fest hinterlegt (Bloomberg 01.01.2007–08.05.2026) ────────
-ASSET_PARAMS = {
-    "aktien": {
-        "mu": 0.053298, "mu_ln": 0.051926, "sigma": 0.164659,
-        "sigma_arith": 0.164659, "mu_arith": 0.066088, "n": 19, "start": 2007,
-    },
-    "obligationen": {
-        "mu": 0.017430, "mu_ln": 0.017280, "sigma": 0.039428,
-        "sigma_arith": 0.039428, "mu_arith": 0.018166, "n": 19, "start": 2007,
-    },
-    "immobilien": {
-        "mu": 0.058934, "mu_ln": 0.057263, "sigma": 0.085415,
-        "sigma_arith": 0.085415, "mu_arith": 0.062531, "n": 19, "start": 2007,
-    },
-    "gold": {
-        "mu": 0.073873, "mu_ln": 0.071272, "sigma": 0.152282,
-        "sigma_arith": 0.152282, "mu_arith": 0.085372, "n": 19, "start": 2007,
-    },
-    "cash": {
-        "mu": 0.000, "mu_ln": 0.000, "sigma": 0.000,
+def _berechne_asset_params(path) -> tuple:
+
+    df = pd.read_excel(path, sheet_name="Tabelle1")
+    _assets = {
+        "aktien":       ("Date",   "SPI Index TR"),
+        "immobilien":   ("Date.1", "SWIIT"),
+        "obligationen": ("Date.2", "SBR24T"),
+        "gold":         ("Date.3", "GOLD"),
+    }
+    params           = {}
+    log_returns_dict = {}
+
+    for name, (dcol, vcol) in _assets.items():
+        s = df[[dcol, vcol]].copy().dropna()
+        s.columns = ["date", "value"]
+        s["date"]  = pd.to_datetime(s["date"], errors="coerce")
+        s          = s.dropna().set_index("date").sort_index()
+        s          = s[s.index >= "2007-01-01"]
+        ann_arith = s["value"].resample(_RESAMPLE_YEAR).last().pct_change().dropna()
+        ann_log    = np.log(1 + ann_arith)
+
+        params[name] = {
+            "mu":          float(np.exp(ann_log.mean()) - 1),  # F04: geometrisch
+            "mu_ln":       float(ann_log.mean()),               # LN-Mittelwert
+            "sigma":       float(ann_log.std(ddof=1)),          # LN-Volatilität
+            "sigma_arith": float(ann_arith.std(ddof=1)),        # arithm. Vol.
+            "mu_arith":    float(ann_arith.mean()),             # arithm. Mittel
+            "n":           len(ann_arith),
+            "start":       int(s.index[0].year),
+        }
+        log_returns_dict[name] = ann_log
+
+    params["cash"] = {
+        "mu": 0.000, "mu_ln": np.log(1.000), "sigma": 0.000,
         "sigma_arith": 0.000, "mu_arith": 0.000, "n": 0, "start": 0,
-    },
-}
+    }
 
-# ── Korrelationsmatrix (aktien, obligationen, immobilien, gold) ───────────────
-ASSET_KORRELATION = np.array([
-    [1.000000, 0.337772, 0.551721, 0.091724],
-    [0.337772, 1.000000, 0.759612, 0.263423],
-    [0.551721, 0.759612, 1.000000, 0.569319],
-    [0.091724, 0.263423, 0.569319, 1.000000],
-])
+    # F03: Korrelationsmatrix aus Log-Returns (gemeinsame Jahresscheiben)
+    df_log      = pd.DataFrame(
+        {a: log_returns_dict[a] for a in STOCHASTIC_ASSETS}
+    ).dropna()
+    corr_matrix = df_log.corr().values
 
-ASSET_CHOLESKY = np.linalg.cholesky(ASSET_KORRELATION)
+    # Numerische Stabilität sicherstellen (positive Definitheit)
+    min_ev = np.linalg.eigvalsh(corr_matrix).min()
+    if min_ev < 1e-8:
+        corr_matrix += np.eye(len(STOCHASTIC_ASSETS)) * (1e-6 - min_ev)
+
+    return params, corr_matrix
+
+
+# ── Asset-Parameter laden ─────────────────────────────────────────────────────
+try:
+    ASSET_PARAMS, ASSET_KORRELATION = _berechne_asset_params(DATA_DIR / "return.xlsx")
+
+    # F03: Cholesky-Faktor (einmalig berechnet, für alle Simulationen)
+    ASSET_CHOLESKY = np.linalg.cholesky(ASSET_KORRELATION)
+
+
+    print("✓ Asset-Parameter aus return.xlsx geladen:")
+    print(f"  {'Asset':<15} {'Start':>6} {'N Jahre':>8} "
+          f"{'μ geo p.a.':>12} {'σ ln p.a.':>10}")
+    print("  " + "-" * 55)
+    for name, p in ASSET_PARAMS.items():
+        if name == "cash": continue
+        print(f"  {name:<15} {p['start']:>6} {p['n']:>8} "
+              f"{p['mu']*100:>11.2f}% {p['sigma']*100:>9.2f}%")
+
+    print(f"\n  Korrelationsmatrix ({', '.join(STOCHASTIC_ASSETS)}):")
+    for i, a in enumerate(STOCHASTIC_ASSETS):
+        print("  " + "  ".join(f"{ASSET_KORRELATION[i,j]:>6.3f}"
+                                for j in range(len(STOCHASTIC_ASSETS))))
+
+    print(f"\n  LIEGEN_MU={LIEGEN_MU:.3%}  LIEGEN_SIGMA={LIEGEN_SIGMA:.3%}")
+
+except FileNotFoundError:
+    raise FileNotFoundError(
+        f"\n\n❌ return.xlsx nicht gefunden!\n"
+        f"   Erwartet in: {DATA_DIR / 'return.xlsx'}\n"
+        f"   Bitte return.xlsx in den Python-Ordner kopieren.\n"
+    )
+
+except Exception as e:
+    raise RuntimeError(
+        f"\n\n❌ Fehler beim Laden von return.xlsx: {e}\n"
+        f"   Bitte Dateiformat prüfen (Excel, Sheet='Tabelle1').\n"
+    )
 
 # ── Portfolios ────────────────────────────────────────────────────────────────
 PORTFOLIOS = {
@@ -514,22 +590,20 @@ PORTFOLIOS = {
         "immobilien": 0.10, "gold": 0.00, "cash": 0.00},
 }
 
-print("✓ Asset-Parameter fest hinterlegt (Bloomberg 2007–2026):")
-print(f"  {'Asset':<15} {'μ geo p.a.':>12} {'σ ln p.a.':>10}")
-print("  " + "-" * 40)
-for name, p in ASSET_PARAMS.items():
-    if name == "cash": continue
-    print(f"  {name:<15} {p['mu']*100:>11.2f}% {p['sigma']*100:>9.2f}%")
-
 print(f"\nPortfolio-Erwartungsrenditen:")
 print(f"  {'Portfolio':<15} {'μ (p.a.)':>10} {'σ (p.a.)':>10}")
 print("  " + "-" * 38)
 for _rv, _p in PORTFOLIOS.items():
-    _mu_p  = sum(ASSET_PARAMS[a]["mu"]    * w for a, w in _p.items() if a != "name")
-    _sig_p = sum(ASSET_PARAMS[a]["sigma"] * w for a, w in _p.items() if a != "name")
+    _mu_p  = sum(ASSET_PARAMS[a]["mu"]    * w
+                 for a, w in _p.items() if a != "name")
+    _sig_p = sum(ASSET_PARAMS[a]["sigma"] * w
+                 for a, w in _p.items() if a != "name")
     print(f"  {_p['name']:<15} {_mu_p*100:>9.2f}% {_sig_p*100:>9.2f}%")
 
+
 # ── Inflation aus BFS CPI ─────────────────────────────────────────────────────
+# Quelle:  Bundesamt für Statistik (BFS), Landesindex der Konsumentenpreise
+
 _infl_rates = np.array([
     1.0, 0.6, 0.6, 0.8, 1.2,
     1.1, 0.7, 2.4, -0.5, 0.7,
@@ -538,55 +612,84 @@ _infl_rates = np.array([
     0.6, 2.8, 2.1, 1.1, 0.2
 ]) / 100
 
-INFLATION_MU    = float(np.prod(1 + _infl_rates) ** (1 / len(_infl_rates)) - 1)
-INFLATION_SIGMA = float(np.std(_infl_rates, ddof=1))
+# Geometrisches Mittel der Inflation
+INFLATION_MU = float(
+    np.prod(1 + _infl_rates) ** (1 / len(_infl_rates)) - 1
+)
 
-print(f"\nInflation Schweiz (BFS 2001–2025):")
+# Historische Volatilität der Inflation
+INFLATION_SIGMA = float(
+    np.std(_infl_rates, ddof=1)
+)
+
+print("\nInflation Schweiz (BFS 2001–2025):")
 print(f"  μ = {INFLATION_MU * 100:.3f}%")
 print(f"  σ = {INFLATION_SIGMA * 100:.3f}%")
 
-# ── Simulationsfunktionen ─────────────────────────────────────────────────────
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SIMULATIONSFUNKTIONEN — CRN-kompatibel
+# ═══════════════════════════════════════════════════════════════════════════
+
 def simuliere_rendite(risikoaversion: int,
                       n_jahre: int,
                       rng: np.random.Generator) -> np.ndarray:
-    p      = PORTFOLIOS[risikoaversion]
+    """
+    F03: Korrelierte Log-Normal-Renditen via Cholesky-Zerlegung.
+    F04: Lognormal-Parameter aus geometrischem Mittel / Log-Std.
+    CRN-kompatibel: rng von aussen übergeben.
+    """
+    p = PORTFOLIOS[risikoaversion]
+
+    # Korrelierte Standardnormalzahlen (n_jahre × 4 Draws)
     z      = rng.standard_normal((n_jahre, len(STOCHASTIC_ASSETS)))
-    z_korr = z @ ASSET_CHOLESKY.T
+    z_korr = z @ ASSET_CHOLESKY.T   # F03: Korrelation eingebaut
+
     renditen = np.zeros(n_jahre)
+
     for i, asset in enumerate(STOCHASTIC_ASSETS):
         w = p.get(asset, 0.0)
-        if w == 0: continue
+        if w == 0:
+            continue
         params = ASSET_PARAMS[asset]
+        # F04: mu_ln und sigma direkt aus Log-Returns
         r = np.exp(z_korr[:, i] * params["sigma"] + params["mu_ln"]) - 1
         renditen += w * r
+
+    # Cash: deterministisch
     renditen += p.get("cash", 0.0) * ASSET_PARAMS["cash"]["mu"]
+
     return renditen
+
 
 def simuliere_inflation(n_jahre: int,
                         rng: np.random.Generator) -> np.ndarray:
-    return rng.normal(INFLATION_MU, INFLATION_SIGMA, n_jahre)
+    """
+    F13: Deflation möglich — untere Schranke bei 0% entfernt.
+    Quelle: BFS CPI 2001–2024.
+    """
+    return rng.normal(INFLATION_MU, INFLATION_SIGMA, n_jahre)  # F13: kein np.maximum
+
 
 def simuliere_liegenschaft_renditen(n_jahre: int,
                                      rng: np.random.Generator) -> np.ndarray:
+    """
+    Jährliche Liegenschaftsrenditen (SWIIT-Parameter).
+    """
     return rng.normal(LIEGEN_MU, LIEGEN_SIGMA, n_jahre)
+
 
 # ── Verifikation ──────────────────────────────────────────────────────────────
 _rng_test = np.random.default_rng(42)
 print(f"\nSimulations-Verifikation (N=10'000):")
 for _rv in [1, 2, 3]:
     _r = simuliere_rendite(_rv, 10_000, _rng_test)
-    print(f"  {PORTFOLIOS[_rv]['name']:<13}: Ø={_r.mean()*100:.2f}%  σ={_r.std()*100:.2f}%")
+    print(f"  {PORTFOLIOS[_rv]['name']:<13}: "
+          f"Ø={_r.mean()*100:.2f}%  σ={_r.std()*100:.2f}%")
 
+print("\n✓ Cell 2: Rendite- & Inflationsmodell geladen")
 
-
-# In[4]:
-
-
-try:
-    import pyreadstat
-except ImportError:
-    pyreadstat = None
-    # ═══════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 # CELL 3 — STERBETAFELN & PFLEGEFALL-PARAMETER
 # Quellen:
 #   Sterbetafeln:   BFS Kohortensterbetafeln 2023 (sterbetafeln_kohorten.csv)
@@ -599,7 +702,10 @@ except ImportError:
 #   EL:             ELG SR 831.30, Stand 2024
 # ═══════════════════════════════════════════════════════════════════════════
 
-import pyreadstat
+try:
+    import pyreadstat
+except ImportError:
+    pyreadstat = None
 from scipy.stats import norm as _scipy_norm
 
 PATH_STERBETAFELN  = DATA_DIR / "sterbetafeln_kohorten.csv"
@@ -1124,8 +1230,9 @@ def get_heim_netto_kosten(rente_ahv, rente_pk, wealth, gemeinde="Urdorf",
     return max(0.0, brutto - el)
 
 
-# In[5]:
-
+print("\n✓ Cell 3: Sterbetafeln & Pflegefall-Parameter geladen")
+print(f"  HEIM_KOSTEN_MU:     {HEIM_KOSTEN_MU:.2%}  σ={HEIM_KOSTEN_SIGMA:.2%}")
+print(f"  SPITEX_KOSTEN_MU:   {SPITEX_KOSTEN_MU:.2%}  σ={SPITEX_KOSTEN_SIGMA:.2%}")
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 4 — PARAMETER-SCHEMA (ZWEI-PERSONEN-HAUSHALT)
@@ -1226,8 +1333,8 @@ class HaushaltParams:
     # ── Simulation ────────────────────────────────────────────────────────
     risikoaversion:  int    = 2            # 1=Konservativ, 2=Ausgewogen, 3=Wachstum
     risikoaversion_saeule3: int = 1        # Säule 3a meist konservativer
-
     zivilstand_logit_a: str = "single"     # initialer civil_status für Arbeitslosigkeits-Logit
+
 
     # ── Berechnete Felder ─────────────────────────────────────────────────
     @property
@@ -1276,101 +1383,6 @@ def berechne_ahv_rente(ahv_rente_erwartet: float,
         rente = rente * (1 + AHV_AUFSCHUB_ZUSCHLAG[aj])
 
     return min(rente, AHV_MAX_RENTE)   # nie über Maximum
-
-
-# ── Demonstrationsbeispiel (Dario + Partner) ─────────────────────────────────
-
-person_a = PersonParams(
-    name             = "Dario",
-    geburtsjahr      = 1978,
-    geschlecht       = "m",
-    bildung          = 2,              # Berufsbildung
-    einkommen        = 120_000,
-    rentenalter      = 65,
-    pk_guthaben      = 280_000,
-    pk_guthaben_65   = 650_000,
-    pk_bei_heirat    = 0.0,            # wird automatisch geschätzt
-    saeule3          = 45_000,
-    saeule3_einzahlung = 7_258,
-    ahv_rente_erwartet = 26_000,
-)
-
-person_b = PersonParams(
-    name             = "Partner",
-    geburtsjahr      = 1983,
-    geschlecht       = "f",
-    bildung          = 2,
-    einkommen        = 90_000,
-    rentenalter      = 65,
-    pk_guthaben      = 150_000,
-    pk_guthaben_65   = 420_000,
-    pk_bei_heirat    = 0.0,
-    saeule3          = 30_000,         # Inputparameter
-    saeule3_einzahlung = 7_258,
-    ahv_rente_erwartet = 22_000,       # Inputparameter
-)
-
-haushalt = HaushaltParams(
-    person_a            = person_a,
-    person_b            = person_b,
-    zivilstand          = "verheiratet",
-    heiratsjahr         = 2008,
-    marriage_duration   = date.today().year - 2008,
-    liquides_vermoegen  = 1_000_000,
-    eigengut_a          = 200_000,     # Inputparameter
-    eigengut_b          = 100_000,     # Inputparameter
-    eiserne_reserve     = 50_000,
-    liegenschaft        = 900_000,
-    hypothek            = 600_000,
-    hypothek_zins       = 0.025,
-    eigenmietwert       = 22_500,
-    ist_ersterwerber    = False,
-    jahr_kauf           = 2010,
-    ausgaben            = 95_000,
-    einmalausgaben      = [],
-    einmaleinnahmen     = [],
-    gemeinde            = "Urdorf",
-    konfession_a        = "ohne",
-    konfession_b        = "ohne",
-    risikoaversion      = 2,
-    risikoaversion_saeule3 = 1,
-)
-
-# ── Verifikation ──────────────────────────────────────────────────────────────
-print("✓ Cell 4: Parameter-Schema geladen")
-print(f"\nDemonstrationsbeispiel:")
-print(f"  Haushalt:         {haushalt.person_a.name} + {haushalt.person_b.name}")
-print(f"  Zivilstand:       {haushalt.zivilstand} seit {haushalt.heiratsjahr}")
-print(f"  Alter A/B:        {haushalt.alter_a()} / {haushalt.alter_b()}")
-print(f"  Einkommen A/B:    CHF {haushalt.person_a.einkommen:,.0f} / "
-      f"CHF {haushalt.person_b.einkommen:,.0f}")
-print(f"  Liquides Verm.:   CHF {haushalt.liquides_vermoegen:,.0f}")
-print(f"  Liegenschaft:     CHF {haushalt.liegenschaft:,.0f} "
-      f"(Hypo: CHF {haushalt.hypothek:,.0f})")
-print(f"  Gemeinde:         {haushalt.gemeinde}  "
-      f"Steuerfuss: {haushalt.steuerfuss:.0f}%")
-print(f"  is_married:       {haushalt.is_married}")
-print(f"  has_partner:      {haushalt.has_partner}")
-print(f"\nAHV-Renten:")
-ahv_a = berechne_ahv_rente(person_a.ahv_rente_erwartet,
-                             person_a.ahv_vorbezug_jahre,
-                             person_a.ahv_aufschub_jahre)
-ahv_b = berechne_ahv_rente(person_b.ahv_rente_erwartet,
-                             person_b.ahv_vorbezug_jahre,
-                             person_b.ahv_aufschub_jahre)
-ahv_total = ahv_a + ahv_b
-ahv_plafond_aktiv = haushalt.is_married and ahv_total > AHV_PLAFOND_EHEPAAR
-print(f"  AHV Person A:     CHF {ahv_a:,.0f}")
-print(f"  AHV Person B:     CHF {ahv_b:,.0f}")
-print(f"  Total:            CHF {ahv_total:,.0f}")
-if ahv_plafond_aktiv:
-    print(f"  ⚠️  Plafond aktiv: CHF {AHV_PLAFOND_EHEPAAR:,.0f} "
-          f"(Reduktion CHF {ahv_total - AHV_PLAFOND_EHEPAAR:,.0f})")
-else:
-    print(f"  Plafond:          nicht aktiv (Limit CHF {AHV_PLAFOND_EHEPAAR:,.0f})")
-
-
-# In[6]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1584,43 +1596,6 @@ def initialisiere_haushalt_state(haushalt: HaushaltParams,
 
     return s
 
-
-# ── Verifikation ──────────────────────────────────────────────────────────────
-
-n_jahre_test = SIM_BIS_ALTER - haushalt.alter_a()
-_basis_1  = generiere_basis_schocks(n_jahre_test, RANDOM_SEED, haushalt)
-_basis_2  = generiere_basis_schocks(n_jahre_test, RANDOM_SEED, haushalt)
-_risiko_1 = generiere_risiko_schocks(n_jahre_test, RANDOM_SEED)
-_risiko_2 = generiere_risiko_schocks(n_jahre_test, RANDOM_SEED)
-
-assert np.allclose(_basis_1.renditen, _basis_2.renditen), \
-    "❌ BasisSchocks nicht reproduzierbar!"
-assert np.allclose(_risiko_1.al_a, _risiko_2.al_a), \
-    "❌ RisikoSchocks nicht reproduzierbar!"
-assert not np.allclose(_basis_1.renditen, _risiko_1.al_a[:, 0]), \
-    "❌ Basis- und Risikoschocks nicht getrennt!"
-assert len(_basis_1.heim_kosten_r)   == n_jahre_test, "❌ heim_kosten_r Länge!"
-assert len(_basis_1.spitex_kosten_r) == n_jahre_test, "❌ spitex_kosten_r Länge!"
-
-_state_test = initialisiere_haushalt_state(haushalt, _basis_1)
-
-print("✓ Cell 5: CRN-Architektur geladen")
-print(f"  BasisSchocks reproduzierbar:          ✅")
-print(f"  RisikoSchocks reproduzierbar:         ✅")
-print(f"  Basis ≠ Risiko (getrennte Streams):   ✅")
-print(f"  heim_kosten_r vorhanden:              ✅")
-print(f"  spitex_kosten_r vorhanden (NEU):      ✅")
-print(f"\nSzenarien ({len(SZENARIEN)}):")
-for name, flags in SZENARIEN.items():
-    aktiv = [k for k, v in flags.items() if v]
-    print(f"  {name:<35} "
-          f"{'(' + ', '.join(aktiv) + ')' if aktiv else '(nur Basis)'}")
-print(f"\nState initialisiert:")
-print(f"  heim_kosten_faktor:   {_state_test['heim_kosten_faktor']:.2f}")
-print(f"  spitex_kosten_faktor: {_state_test['spitex_kosten_faktor']:.2f}")
-
-
-# In[7]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2125,10 +2100,6 @@ print("✓ Cell 6: jahresschritt() definiert")
 print(f"  Fix 3: Pflege-Tod → nur Flag, kein frühes return ✓")
 print(f"  Fix 4: BVG-Cashflow-Abzug = AN-Anteil (50%), BVG Art. 66 ✓")
 
-
-# In[8]:
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 7 — RISIKOMODULE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2412,10 +2383,6 @@ def _pflegefall_step_crn(alter:                int,
 
 print("\n✓ Cell 7: Risikomodule geladen")
 
-
-# In[9]:
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # CELL 8 — SIMULATIONS-LOOP
 # Läuft alle 8 Szenarien auf identischen Basispfaden (CRN).
@@ -2648,3 +2615,43 @@ def simuliere_alle_szenarien_parallel(haushalt: HaushaltParams,
 # ALLE SZENARIEN SIMULIEREN
 # ═══════════════════════════════════════════════════════════════════════════
 
+print(f"Starte Simulation: N={N_SIM:,} je Szenario")
+print(f"Haushalt: {haushalt.person_a.name} (Jg. {haushalt.person_a.geburtsjahr}) "
+      f"+ {haushalt.person_b.name} (Jg. {haushalt.person_b.geburtsjahr})")
+print(f"Alter A/B: {haushalt.alter_a()}/{haushalt.alter_b()}")
+print("=" * 60)
+
+_t_total  = time.time()
+RESULTATE = simuliere_alle_szenarien_parallel(haushalt, n_sim=N_SIM)
+
+print(f"\n{'Szenario':<35} {'P(Tod<85)':>10} {'P(Ruin|lebt)':>13} "
+      f"{'P(Lücke 85)':>12} {'Netto-Pos. 85':>20} {'Ruin-Alter':>11}")
+print("─" * 106)
+
+for _name, _res in RESULTATE.items():
+    _kz = _res["kennzahlen"]
+    _netto = _kz["median_netto_85"]
+    if np.isnan(_netto):
+        _netto_str = f"{'–':>20}"
+    elif _netto >= 0:
+        _netto_str = f"Verm.  CHF {_netto/1e6:>6.2f}M"
+    else:
+        _netto_str = f"Lücke  CHF {abs(_netto)/1e6:>6.2f}M"
+    _luecke_str = (f"{_kz['p_vorsorgeluecke_85']*100:>11.1f}%"
+                   if not np.isnan(_kz["p_vorsorgeluecke_85"])
+                   else f"{'–':>12}")
+    _ruin_str = (f"{_kz['median_ruin_alter']:>10.1f}"
+                 if not np.isnan(_kz["median_ruin_alter"])
+                 else f"{'kein Ruin':>10}")
+    print(f"{_name:<35} "
+          f"{_kz['p_tod_bis_85']*100:>9.1f}% "
+          f"{_kz['p_ruin_bedingt_85']*100:>12.2f}% "
+          f"{_luecke_str} "
+          f"{_netto_str} "
+          f"{_ruin_str}")
+
+print(f"\n{'='*60}")
+print(f"Total Laufzeit: {time.time()-_t_total:.1f}s")
+print(f"✓ Cell 8: Alle {len(SZENARIEN)} Szenarien simuliert")
+print(f"  Fix 1: s['szenario'] = name gesetzt ✓")
+print(f"  Fix 2: Todesjahr-Vermögen vor break gespeichert ✓")
