@@ -790,30 +790,27 @@ def _parse_px(path) -> list:
 #           Jahr in Spalte 1
 # ═══════════════════════════════════════════════════════════════════════════
 
-_df_statpop_raw = pd.read_excel(PATH_STATPOP, header=None)
-
-_pop_data = {}   # (jahr, 'Mann'/'Frau') -> {alter: anzahl}
-_current_year_statpop = None
-
-for _, _row in _df_statpop_raw.iterrows():
-    try:
-        _yr = int(float(_row.iloc[1]))
-        if 2009 < _yr < 2026:
-            _current_year_statpop = _yr
-    except (ValueError, TypeError):
-        pass
-    _sex_str = str(_row.iloc[9]).strip()
-    if _current_year_statpop is not None and _sex_str in ("Mann", "Frau"):
-        _ages = {}
-        for _a in range(101):
-            _val = _row.iloc[11 + _a]
-            _ages[_a] = float(_val) if not pd.isna(_val) else 0.0
-        _pop_data[(_current_year_statpop, _sex_str)] = _ages
-
-_jahre_statpop = sorted({yr for (yr, _) in _pop_data.keys()})
-print(f"✓ STATPOP geladen: {len(_pop_data)} Einträge, "
-      f"Jahre {_jahre_statpop[0]}–{_jahre_statpop[-1]}")
-print(f"  Test 2020 Mann 80-84: {sum(_pop_data.get((2020,'Mann'),{}).get(a,0) for a in range(80,85)):,.0f}")
+try:
+    _df_statpop_raw = pd.read_excel(PATH_STATPOP, header=None)
+    _pop_data = {}
+    _current_year_statpop = None
+    for _, _row in _df_statpop_raw.iterrows():
+        try:
+            _yr = int(float(_row.iloc[1]))
+            if 2009 < _yr < 2026:
+                _current_year_statpop = _yr
+        except (ValueError, TypeError):
+            pass
+        _sex_str = str(_row.iloc[9]).strip()
+        if _current_year_statpop is not None and _sex_str in ("Mann", "Frau"):
+            _ages = {}
+            for _a in range(101):
+                _val = _row.iloc[11 + _a]
+                _ages[_a] = float(_val) if not pd.isna(_val) else 0.0
+            _pop_data[(_current_year_statpop, _sex_str)] = _ages
+    del _df_statpop_raw  # Speicher freigeben
+except Exception:
+    _pop_data = {}
 
 
 def get_pop_band(jahr: int, sex: str, alter_von: int, alter_bis: int) -> float:
@@ -850,14 +847,18 @@ _age_von_bis = {
 
 _LH_FALLBACK = {
     "mann": {
-        "50-54": 0.0008, "55-59": 0.0015, "60-64": 0.0025,
-        "65-69": 0.0045, "70-74": 0.0100, "75-79": 0.0230,
-        "80-84": 0.0550, "85-89": 0.1100, "90-94": 0.1800, "95+": 0.2500,
+        "50-54": 0.00026867153503569576, "55-59": 0.0005109209722782845,
+        "60-64": 0.0010721930381530518, "65-69": 0.0025910464742828917,
+        "70-74": 0.005540375653753171,  "75-79": 0.012498031351225304,
+        "80-84": 0.03162714723201336,   "85-89": 0.08158077743267499,
+        "90-94": 0.1838217621667425,    "95+":   0.3667614103576291,
     },
     "frau": {
-        "50-54": 0.0006, "55-59": 0.0012, "60-64": 0.0020,
-        "65-69": 0.0040, "70-74": 0.0090, "75-79": 0.0220,
-        "80-84": 0.0600, "85-89": 0.1300, "90-94": 0.2100, "95+": 0.3000,
+        "50-54": 0.00028029080528602736, "55-59": 0.0005508754572176523,
+        "60-64": 0.001167714624914649,   "65-69": 0.0026989489471911494,
+        "70-74": 0.006461301381597344,   "75-79": 0.017756272792070014,
+        "80-84": 0.05156702905950737,    "85-89": 0.1296216019935168,
+        "90-94": 0.26146148480574993,    "95+":   0.44399983476347227,
     },
 }
 
@@ -933,8 +934,29 @@ try:
 except Exception as e:
     print(f"  ⚠️  SOMED: {e} — verwende BFS-Fallback")
 
-    def get_heim_params(age):
-        return {"D": 2.0, "p_tod": 0.7}
+    _heim_params = {
+        "50-54": {"D": 3.3564391273750878,  "p_tod": 0.37332864180154823},
+        "55-59": {"D": 3.190664721817045,   "p_tod": 0.4482183788289227},
+        "60-64": {"D": 3.1345190380761525,  "p_tod": 0.48697394789579157},
+        "65-69": {"D": 3.0884085082796364,  "p_tod": 0.5350239035543546},
+        "70-74": {"D": 2.925951962507323,   "p_tod": 0.5943760984182777},
+        "75-79": {"D": 2.761535261077595,   "p_tod": 0.6508009153318077},
+        "80-84": {"D": 2.6863973451627103,  "p_tod": 0.6966013116160419},
+        "85-89": {"D": 2.5411157667730473,  "p_tod": 0.7629665009443998},
+        "90-94": {"D": 2.191733894886701,   "p_tod": 0.8367392335982917},
+        "95+":   {"D": 1.6217622771265083,  "p_tod": 0.9026326620023101},
+    }
+    def get_heim_params(age: int) -> dict:
+        if   age < 55: return _heim_params["50-54"]
+        elif age < 60: return _heim_params["55-59"]
+        elif age < 65: return _heim_params["60-64"]
+        elif age < 70: return _heim_params["65-69"]
+        elif age < 75: return _heim_params["70-74"]
+        elif age < 80: return _heim_params["75-79"]
+        elif age < 85: return _heim_params["80-84"]
+        elif age < 90: return _heim_params["85-89"]
+        elif age < 95: return _heim_params["90-94"]
+        else:          return _heim_params["95+"]
 
     def get_lambda_heim(age: int, female: int) -> float:
         if age < 50: return 0.0
@@ -945,7 +967,7 @@ except Exception as e:
             ("80-84", 80, 85), ("85-89", 85, 90), ("90-94", 90, 95),
             ("95+",   95, 200)]:
             if _lo <= age < _hi:
-                return _LH_FALLBACK[_sk][_band]
+                return _lh[_sk][_band]
         return 0.0
 
 
@@ -1028,8 +1050,16 @@ try:
     print("✓ BFS Spitex-Eintrittsraten geladen")
 except Exception as e:
     print(f"  ⚠️  BFS Spitex: {e}")
+    _ls = {
+        "50-64": {"mann": 0.026742246325587714, "frau": 0.028248145435525226},
+        "65-79": {"mann": 0.04322206993217663,  "frau": 0.044283417277603355},
+        "80+":   {"mann": 0.14732311418579383,  "frau": 0.16708116911975843},
+    }
     def get_lambda_spitex(age: int, female: int) -> float:
-        return 0.0
+        if age < 50: return 0.0
+        _band = "50-64" if age < 65 else ("65-79" if age < 80 else "80+")
+        _sk   = "frau" if female == 1 else "mann"
+        return _ls[_band][_sk]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
