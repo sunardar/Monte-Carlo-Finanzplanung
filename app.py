@@ -1,6 +1,6 @@
 """
 Monte Carlo Finanzplanung Schweiz — Streamlit App
-Masterarbeit ZHAW — Stochastische Finanzplanung für private Haushalte
+Masterarbeit  — Stochastische Finanzplanung für private Haushalte
 """
 
 import streamlit as st
@@ -302,14 +302,11 @@ def seite_eingabe():
 
         # ── Portfolio & Simulation ─────────────────────────────────────────────
         with st.expander("Portfolio & Simulation", expanded=True):
-            c1,c2,c3 = st.columns(3)
+            c1,c2 = st.columns(2)
             risiko    = c1.select_slider("Portfolio freies Vermögen",
                                          ["Konservativ","Ausgewogen","Wachstum"], "Ausgewogen", key="rs")
             risiko_s3 = c2.select_slider("Portfolio Säule 3a",
                                           ["Konservativ","Ausgewogen","Wachstum"], "Konservativ", key="rs3")
-            n_sim_wahl = c3.selectbox("Anzahl Simulationen", [1_000, 10_000],
-                                       index=1, format_func=lambda x: f"{x:,}".replace(",","'"), key="nsim")
-
 
         # ── Einmalzahlungen ───────────────────────────────────────────────────
         with st.expander("Geplante Einmalzahlungen", expanded=False):
@@ -328,7 +325,15 @@ def seite_eingabe():
 
         # ── Submit ────────────────────────────────────────────────────────────
         st.markdown("<br>", unsafe_allow_html=True)
-        submitted = st.form_submit_button("Simulation starten — alle 8 Szenarien berechnen")
+        cs, cn = st.columns([3, 1])
+        with cn:
+            n_sim_wahl = st.selectbox("Anzahl Simulationen", [1_000, 10_000],
+                                      index=1, format_func=lambda x: f"{x:,}".replace(",","'"), key="nsim")
+        with cs:
+            st.markdown("<div style='padding-top:28px'>", unsafe_allow_html=True)
+            submitted = st.form_submit_button("Simulation starten — alle 8 Szenarien berechnen",
+                                              use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     if submitted:
         einmalausgaben_list = [(aus_j[i], aus_b[i]) for i in range(5) if aus_b[i] > 0]
