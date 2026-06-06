@@ -174,6 +174,9 @@ P_DIVORCE_BY_DURATION = {
 #   Verifikation Vermögenssteuer: zh.ch Steuerrechner (vom Nutzer bestätigt)
 # ═══════════════════════════════════════════════════════════════════════════
 
+# Kanton ZH fixer Steuerfuss
+KANTON_ZH_STEUERFUSS = 95  # Quell: Steueramt Kanton Zürich
+
 # ── Gemeindesteuerfüsse laden ─────────────────────────────────────────────────
 _df_steuer = pd.read_csv(
     DATA_DIR / "Gemeindesteuerfüsse_2026.csv",
@@ -189,8 +192,8 @@ _COL_CHR   = "1. Gesamtsteuerfuss mit christkath. Kirche (in Prozent)"
 
 def get_steuerfuss(gemeinde: str, konfession: str = "ohne") -> float:
     """
-    Gibt den Gesamtsteuerfuss zurück (Kanton + Gemeinde + Kirche falls zutreffend).
-    Werte bereits als Gesamtsteuerfuss in CSV — kein weiterer Zuschlag nötig.
+    Gibt den Gesamtsteuerfuss zurück (Kanton 95% + Gemeinde + Kirche falls zutreffend).
+    CSV enthält nur den Gemeindesteuerfuss — Kantonssteuerfuss 95% wird addiert.
     konfession: 'ohne' | 'ref' | 'kath' | 'chr'
     Quelle: Steueramt Kanton Zürich, Gemeindesteuerfüsse_2026.csv
     """
@@ -206,9 +209,9 @@ def get_steuerfuss(gemeinde: str, konfession: str = "ohne") -> float:
 
     val = row[col]
     if pd.isna(val):
-        # Fallback auf ohne Kirche wenn Kirchensteuerfuss fehlt
         val = row[_COL_OHNE]
-    return float(val)
+    # CSV enthält nur Gemeindesteuerfuss — Kantonssteuerfuss 95% addieren
+    return float(val) + KANTON_ZH_STEUERFUSS
 
 
 def get_gemeinden():
@@ -1696,7 +1699,7 @@ def jahresschritt(s: dict,
 
     # ── PK-Kapitalbezug bei Pensionierung ─────────────────────────────────
     if pensioniert_a and not s["pk_bezogen_a"]:
-        if s.get("szenario") in ["Basis", "Basis + Pflegefall"]:
+        if not s.get("geschieden", False):
             pk_basis_a = haushalt.person_a.pk_guthaben_65
         else:
             pk_basis_a = s["pk_kapital_a"]
@@ -1713,7 +1716,7 @@ def jahresschritt(s: dict,
 
     if (pensioniert_b and s.get("has_partner") and s.get("alive_b")
             and not s.get("pk_bezogen_b", False)):
-        if s.get("szenario") in ["Basis", "Basis + Pflegefall"]:
+        if not s.get("geschieden", False):
             pk_basis_b = haushalt.person_b.pk_guthaben_65
         else:
             pk_basis_b = s.get("pk_kapital_b", 0.0)
